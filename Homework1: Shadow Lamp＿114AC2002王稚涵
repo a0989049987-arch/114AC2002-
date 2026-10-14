@@ -1,0 +1,130 @@
+const int pushButton = 2; // 按鈕接在 D2 腳位
+const int redPin = 3;     // RGB LED 紅色 (R) 接在 D3 (PWM)
+const int greenPin = 5;   // RGB LED 綠色 (G) 接在 D5 (PWM)
+const int bluePin = 6;    // RGB LED 藍色 (B) 接在 D6 (PWM)
+
+// 8 種高飽和彩虹顏色
+const int rainbowColors[8][3] = {
+  {255, 0, 0},    // 1. 純紅
+  {255, 40, 0},   // 2. 深赤橘
+  {255, 90, 0},   // 3. 亮橘色
+  {255, 160, 0},  // 4. 金黃橘
+  {0, 255, 0},    // 5. 純綠
+  {0, 255, 255},  // 6. 青色
+  {0, 0, 255},    // 7. 純藍
+  {255, 0, 128}   // 8. 桃紅
+};
+
+int colorIndex = 0;           
+bool ledPower = true;          
+
+// 按鈕狀態追蹤變數
+int lastButtonState = LOW;
+unsigned long pressStartTime = 0;
+bool isLongPress = false;
+
+// 點擊次數與時間紀錄
+unsigned long lastReleaseTime = 0;
+int clickCount = 0;
+const unsigned long doubleClickWindow = 500; // 放大到 500 毫秒，讓雙擊更容易成功
+
+// 漸變數值
+int currentR = 0;
+int currentG = 0;
+int currentB = 0;
+
+void setup() {
+  pinMode(pushButton, INPUT);
+  pinMode(redPin, OUTPUT);
+  pinMode(greenPin, OUTPUT);
+  pinMode(bluePin, OUTPUT);
+}
+
+void loop() {
+  int buttonState = digitalRead(pushButton);
+  unsigned long currentTime = millis();
+
+  // --- 1. 按鈕動作偵測（按下 vs 放開） ---
+  if (buttonState == HIGH && lastButtonState == LOW) {
+    // 剛按下的瞬間
+    pressStartTime = currentTime;
+    isLongPress = false;
+    delay(25); // 防彈跳
+  } 
+  else if (buttonState == HIGH && lastButtonState == HIGH) {
+    // 持續按住中：檢查是否達到長按門檻 (650毫秒) -> 觸發 RGB 閃爍
+    if (!isLongPress && (currentTime - pressStartTime > 650)) {
+      isLongPress = true;
+    }
+  } 
+  else if (buttonState == LOW && lastButtonState == HIGH) {
+    // 剛放開的瞬間
+    unsigned long pressDuration = currentTime - pressStartTime;
+    
+    // 如果不是長按，才計算為點擊
+    if (!isLongPress && pressDuration > 30) { // 濾掉太短的雜訊
+      clickCount++;
+      lastReleaseTime = currentTime;
+    }
+    isLongPress = false;
+    delay(25); // 防彈跳
+  }
+  
+  lastButtonState = buttonState;
+
+  // --- 2. 判斷短按（一下切換顏色 / 兩下開關電源） ---
+  if (clickCount > 0 && (currentTime - lastReleaseTime > doubleClickWindow)) {
+    if (clickCount >= 2) {
+      // **連續按兩下**：強制切換電源開關！
+      ledPower = !ledPower;
+    } else {
+      // **按一下**：切換下一個顏色
+      if (ledPower) {
+        colorIndex = (colorIndex + 1) % 8;
+      } else {
+        ledPower = true; // 關閉狀態下按一下會自動開機
+      }
+    }
+    clickCount = 0; // 結算後重置點擊計數
+  }
+
+  // --- 3. 目標顏色計算 ---
+  int targetR = 0;
+  int targetG = 0;
+  int targetB = 0;
+
+  if (isLongPress && ledPower) {
+    // **長按中**：RGB 快速閃爍
+    int flashIndex = (currentTime / 100) % 8;
+    targetR = rainbowColors[flashIndex][0];
+    targetG = rainbowColors[flashIndex][1];
+    targetB = rainbowColors[flashIndex][2];
+  } else {
+    // **正常模式**：依據開關與目前顏色
+    if (ledPower) {
+      targetR = rainbowColors[colorIndex][0];
+      targetG = rainbowColors[colorIndex][1];
+      targetB = rainbowColors[colorIndex][2];
+    }
+  }
+
+  // --- 4. 平滑漸變過渡 ---
+  if (currentR < targetR) currentR += 4;
+  if (currentR > targetR) currentR -= 4;
+  if (abs(currentR - targetR) <= 3) currentR = targetR;
+  
+  if (currentG < targetG) currentG += 4;
+  if (currentG > targetG) currentG -= 4;
+  if (abs(currentG - targetG) <= 3) currentG = targetG;
+  
+  if (currentB < targetB) currentB += 4;
+  if (currentB > targetB) currentB -= 4;
+  if (abs(currentB - targetB) <= 3) currentB = targetB;
+
+  // 輸出至 LED
+  analogWrite(redPin, currentR);
+  analogWrite(greenPin, currentG);
+  analogWrite(bluePin, currentB);
+
+  delay(2);
+}
